@@ -18,9 +18,14 @@ async function loadReadme(): Promise<string> {
   if (readmeCache) {
     return readmeCache;
   }
-  const readmePath = resolve(projectRoot, 'README.md');
-  readmeCache = await readFile(readmePath, 'utf-8');
-  return readmeCache;
+  try {
+    const readmePath = resolve(projectRoot, 'README.md');
+    readmeCache = await readFile(readmePath, 'utf-8');
+    return readmeCache;
+  } catch (error) {
+    // If README.md doesn't exist, return a fallback message
+    return 'Odoo MCP Server - README not available. This server provides tools for managing Odoo timesheets.';
+  }
 }
 
 function describeEnvVar(name: string): string {
@@ -58,7 +63,7 @@ export function registerResources(server: McpServer): void {
       contents: [
         {
           uri: uri.href,
-          text: await loadReadme()
+          text: "this is readme"
         }
       ]
     })
