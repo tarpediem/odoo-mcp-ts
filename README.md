@@ -122,4 +122,3 @@ If you need to customise the behaviour (additional fields, different defaults, e
 
 - [Odoo 16 External API reference](https://www.odoo.com/documentation/16.0/developer/reference/external_api.html)
 - [Model Context Protocol - Build a server](https://modelcontextprotocol.io/docs/develop/build-server)
-# odoo-mcp-ts
