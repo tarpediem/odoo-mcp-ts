@@ -28,11 +28,11 @@ curl -X POST \
   -d '{"jsonrpc":"2.0","id":1,"method":"ping"}' \
   "http://localhost:3333/messages?sessionId=$SESSION_ID"
 
-# List available tools
+# List available tools using MCP protocol
 echo -e "\nListing available tools..."
 curl -X POST \
   -H "Content-Type: application/json" \
-  -d '{"jsonrpc":"2.0","id":2,"method":"mcp.listTools"}' \
+  -d '{"jsonrpc":"2.0","id":2,"method":"tools/list","params":{}}' \
   "http://localhost:3333/messages?sessionId=$SESSION_ID"
 
 echo ""
