@@ -291,7 +291,8 @@ if (transportMode === 'stdio') {
 } else if (transportMode === 'sse') {
   const app = express();
   const port = Number.parseInt(process.env.MCP_HTTP_PORT ?? '3333', 10);
-  const postPath = process.env.MCP_SSE_POST_PATH ?? '/mcp/messages';
+  const ssePath = process.env.MCP_SSE_PATH ?? '/sse';
+  const postPath = process.env.MCP_SSE_POST_PATH ?? '/messages';
 
   app.use(express.json({ limit: '4mb' }));
 
@@ -302,7 +303,7 @@ if (transportMode === 'stdio') {
 
   const sessions = new Map<string, SessionContext>();
 
-  app.get('/mcp', async (_req, res) => {
+  const handleSSEConnection = async (_req: express.Request, res: express.Response) => {
     const sessionServer = createConfiguredServer();
     const transport = new SSEServerTransport(postPath, res);
 
@@ -325,7 +326,13 @@ if (transportMode === 'stdio') {
       res.end();
       console.error('Failed to establish SSE session:', error);
     }
-  });
+  };
+
+  app.get(ssePath, handleSSEConnection);
+
+  if (ssePath !== '/mcp') {
+    app.get('/mcp', handleSSEConnection);
+  }
 
   app.post(postPath, async (req, res) => {
     const sessionIdParam = req.query.sessionId;
@@ -353,7 +360,7 @@ if (transportMode === 'stdio') {
   });
 
   const serverInstance = app.listen(port, () => {
-    console.log(`Odoo MCP server (SSE mode) listening on port ${port}`);
+    console.log(`Odoo MCP server (SSE mode) listening on port ${port}, SSE path: ${ssePath}, POST path: ${postPath}`);
   });
 
   const shutdown = async () => {

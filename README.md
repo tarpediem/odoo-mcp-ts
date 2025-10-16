@@ -80,13 +80,14 @@ SSE mode starts an HTTP server with the following settings (override via env var
 |----------------------|-----------------|------------------------------------------------------------------------|
 | `MCP_TRANSPORT`      | `stdio`         | Set to `sse` to enable HTTP + SSE transport.                           |
 | `MCP_HTTP_PORT`      | `3333`          | Port for the HTTP server.                                             |
-| `MCP_SSE_POST_PATH`  | `/mcp/messages` | Relative path clients use for POSTing MCP payloads.                    |
+| `MCP_SSE_PATH`       | `/sse`          | GET path where clients establish the SSE stream (alias: `/mcp`).       |
+| `MCP_SSE_POST_PATH`  | `/messages`     | Relative path clients use for POSTing MCP payloads.                    |
 
 When running in SSE mode:
 
-- Clients open a GET stream on `/mcp` (e.g. `GET http://host:3333/mcp`).
+- Clients open a GET stream on `/sse` (e.g. `GET http://host:3333/sse`). For backwards compatibility, `/mcp` is also accepted.
 - The server emits an `endpoint` event that includes the POST URL + `sessionId`.
-- Clients send JSON-RPC requests to the POST endpoint returned in the event (default `/mcp/messages?sessionId=...`).
+- Clients send JSON-RPC requests to the POST endpoint returned in the event (default `/messages?sessionId=...`).
 
 Multiple sessions are supported; each incoming GET connection gets its own MCP server instance.
 
