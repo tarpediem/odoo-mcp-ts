@@ -32,7 +32,7 @@ curl -X POST \
 echo -e "\nListing available tools..."
 curl -X POST \
   -H "Content-Type: application/json" \
-  -d '{"jsonrpc":"2.0","id":2,"method":"listTools"}' \
+  -d '{"jsonrpc":"2.0","id":2,"method":"mcp.listTools"}' \
   "http://localhost:3333/messages?sessionId=$SESSION_ID"
 
 echo ""
