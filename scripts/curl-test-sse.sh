@@ -28,9 +28,16 @@ curl -X POST \
   -d '{"jsonrpc":"2.0","id":1,"method":"ping"}' \
   "http://localhost:3333/messages?sessionId=$SESSION_ID"
 
+# List available tools
+echo -e "\nListing available tools..."
+curl -X POST \
+  -H "Content-Type: application/json" \
+  -d '{"jsonrpc":"2.0","id":2,"method":"listTools"}' \
+  "http://localhost:3333/messages?sessionId=$SESSION_ID"
+
 echo ""
 echo "Waiting for response..."
-sleep 3
+sleep 5
 
 # Display the SSE response
 echo "SSE response:"
