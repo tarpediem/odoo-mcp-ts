@@ -104,155 +104,155 @@ function registerTimesheetTools(server: McpServer): void {
   registerResources(server);
 
   server.registerTool(
-  'list_timesheets',
-  {
-    title: 'List Timesheets',
-    description: 'Search recent Odoo timesheet entries (account.analytic.line records).',
-    inputSchema: {
-      employeeId: z.number().int().nonnegative().optional().describe('Filter by employee ID.'),
-      projectId: z.number().int().nonnegative().optional().describe('Filter by project ID.'),
-      taskId: z.number().int().nonnegative().optional().describe('Filter by task ID.'),
-      date: isoDateSchema.optional().describe('Filter by a specific entry date.'),
-      descriptionQuery: z
-        .string()
-        .min(1)
-        .max(120)
-        .optional()
-        .describe('Case-insensitive match on the description.'),
-      limit: z
-        .number()
-        .int()
-        .min(1)
-        .max(200)
-        .default(20)
-        .describe('Maximum number of timesheets to return.')
+    'list_timesheets',
+    {
+      title: 'List Timesheets',
+      description: 'Search recent Odoo timesheet entries (account.analytic.line records).',
+      inputSchema: {
+        employeeId: z.number().int().nonnegative().optional().describe('Filter by employee ID.'),
+        projectId: z.number().int().nonnegative().optional().describe('Filter by project ID.'),
+        taskId: z.number().int().nonnegative().optional().describe('Filter by task ID.'),
+        date: isoDateSchema.optional().describe('Filter by a specific entry date.'),
+        descriptionQuery: z
+          .string()
+          .min(1)
+          .max(120)
+          .optional()
+          .describe('Case-insensitive match on the description.'),
+        limit: z
+          .number()
+          .int()
+          .min(1)
+          .max(200)
+          .default(20)
+          .describe('Maximum number of timesheets to return.')
+      },
+      outputSchema: {
+        timesheets: z.array(timesheetOutputSchema)
+      }
     },
-    outputSchema: {
-      timesheets: z.array(timesheetOutputSchema)
+    async ({ employeeId, projectId, taskId, date, descriptionQuery, limit }) => {
+      const timesheets = await withOdooClient('list_timesheets', client =>
+        client.findTimesheets(
+          {
+            employeeId,
+            projectId,
+            taskId,
+            date,
+            descriptionContains: descriptionQuery
+          },
+          limit
+        )
+      );
+
+      const normalized = timesheets.map(normalizeTimesheet);
+      const output = { timesheets: normalized };
+
+      return {
+        content: [{ type: 'text', text: JSON.stringify(output, null, 2) }],
+        structuredContent: output
+      };
     }
-  },
-  async ({ employeeId, projectId, taskId, date, descriptionQuery, limit }) => {
-    const timesheets = await withOdooClient('list_timesheets', client =>
-      client.findTimesheets(
-        {
-          employeeId,
+  );
+
+  server.registerTool(
+    'update_timesheet',
+    {
+      title: 'Update Timesheet Entry',
+      description: 'Modify an existing timesheet entry in Odoo.',
+      inputSchema: {
+        timesheetId: z.number().int().positive().describe('Internal ID of the timesheet record to update.'),
+        description: z
+          .string()
+          .min(1)
+          .max(120)
+          .optional()
+          .describe('New description for the entry.'),
+        projectId: z.number().int().positive().optional().describe('Project ID to associate with the entry.'),
+        taskId: z.number().int().positive().optional().describe('Task ID to associate with the entry.'),
+        hours: z
+          .number()
+          .min(0)
+          .max(24)
+          .optional()
+          .describe('Number of hours to record for this entry.'),
+        date: isoDateSchema.optional().describe('Update the entry date.')
+      },
+      outputSchema: {
+        success: z.boolean(),
+        updatedTimesheet: timesheetOutputSchema.nullable()
+      }
+    },
+    async ({ timesheetId, description, projectId, taskId, hours, date }) => {
+      const success = await withOdooClient('update_timesheet', client =>
+        client.updateTimesheet(timesheetId, {
+          description,
           projectId,
           taskId,
+          unitAmountHours: hours,
+          date
+        })
+      );
+
+      const updated = success
+        ? await withOdooClient('update_timesheet:fetch', client => client.getTimesheet(timesheetId))
+        : null;
+
+      const normalized = updated ? normalizeTimesheet(updated) : null;
+      const output = {
+        success,
+        updatedTimesheet: normalized
+      };
+
+      return {
+        content: [{ type: 'text', text: JSON.stringify(output, null, 2) }],
+        structuredContent: output
+      };
+    }
+  );
+
+  server.registerTool(
+    'create_timesheet',
+    {
+      title: 'Create Timesheet Entry',
+      description: 'Create a new timesheet entry in Odoo.',
+      inputSchema: {
+        employeeId: z.number().int().positive().describe('Employee ID for whom the entry is created.'),
+        description: z.string().min(1).max(120).describe('Summary or label for the timesheet entry.'),
+        hours: z.number().min(0).max(24).describe('Hours worked for this entry.'),
+        date: isoDateSchema.describe('Entry date in YYYY-MM-DD.'),
+        projectId: z.number().int().positive().optional().describe('Related project ID, if any.'),
+        taskId: z.number().int().positive().optional().describe('Related task ID, if any.')
+      },
+      outputSchema: {
+        success: z.boolean(),
+        createdTimesheet: timesheetOutputSchema.nullable()
+      }
+    },
+    async ({ employeeId, description, hours, date, projectId, taskId }) => {
+      const timesheetId = await withOdooClient('create_timesheet', client =>
+        client.createTimesheet({
+          employeeId,
+          description,
+          unitAmountHours: hours,
           date,
-          descriptionContains: descriptionQuery
-        },
-        limit
-      )
-    );
+          projectId,
+          taskId
+        })
+      );
 
-    const normalized = timesheets.map(normalizeTimesheet);
-    const output = { timesheets: normalized };
+      const created = await withOdooClient('create_timesheet:fetch', client => client.getTimesheet(timesheetId));
+      const normalized = created ? normalizeTimesheet(created) : null;
+      const output = {
+        success: normalized !== null,
+        createdTimesheet: normalized
+      };
 
-    return {
-      content: [{ type: 'text', text: JSON.stringify(output, null, 2) }],
-      structuredContent: output
-    };
-    }
-  );
-
-  server.registerTool(
-  'update_timesheet',
-  {
-    title: 'Update Timesheet Entry',
-    description: 'Modify an existing timesheet entry in Odoo.',
-    inputSchema: {
-      timesheetId: z.number().int().positive().describe('Internal ID of the timesheet record to update.'),
-      description: z
-        .string()
-        .min(1)
-        .max(120)
-        .optional()
-        .describe('New description for the entry.'),
-      projectId: z.number().int().positive().optional().describe('Project ID to associate with the entry.'),
-      taskId: z.number().int().positive().optional().describe('Task ID to associate with the entry.'),
-      hours: z
-        .number()
-        .min(0)
-        .max(24)
-        .optional()
-        .describe('Number of hours to record for this entry.'),
-      date: isoDateSchema.optional().describe('Update the entry date.')
-    },
-    outputSchema: {
-      success: z.boolean(),
-      updatedTimesheet: timesheetOutputSchema.nullable()
-    }
-  },
-  async ({ timesheetId, description, projectId, taskId, hours, date }) => {
-    const success = await withOdooClient('update_timesheet', client =>
-      client.updateTimesheet(timesheetId, {
-        description,
-        projectId,
-        taskId,
-        unitAmountHours: hours,
-        date
-      })
-    );
-
-    const updated = success
-      ? await withOdooClient('update_timesheet:fetch', client => client.getTimesheet(timesheetId))
-      : null;
-
-    const normalized = updated ? normalizeTimesheet(updated) : null;
-    const output = {
-      success,
-      updatedTimesheet: normalized
-    };
-
-    return {
-      content: [{ type: 'text', text: JSON.stringify(output, null, 2) }],
-      structuredContent: output
-    };
-    }
-  );
-
-  server.registerTool(
-  'create_timesheet',
-  {
-    title: 'Create Timesheet Entry',
-    description: 'Create a new timesheet entry in Odoo.',
-    inputSchema: {
-      employeeId: z.number().int().positive().describe('Employee ID for whom the entry is created.'),
-      description: z.string().min(1).max(120).describe('Summary or label for the timesheet entry.'),
-      hours: z.number().min(0).max(24).describe('Hours worked for this entry.'),
-      date: isoDateSchema.describe('Entry date in YYYY-MM-DD.'),
-      projectId: z.number().int().positive().optional().describe('Related project ID, if any.'),
-      taskId: z.number().int().positive().optional().describe('Related task ID, if any.')
-    },
-    outputSchema: {
-      success: z.boolean(),
-      createdTimesheet: timesheetOutputSchema.nullable()
-    }
-  },
-  async ({ employeeId, description, hours, date, projectId, taskId }) => {
-    const timesheetId = await withOdooClient('create_timesheet', client =>
-      client.createTimesheet({
-        employeeId,
-        description,
-        unitAmountHours: hours,
-        date,
-        projectId,
-        taskId
-      })
-    );
-
-    const created = await withOdooClient('create_timesheet:fetch', client => client.getTimesheet(timesheetId));
-    const normalized = created ? normalizeTimesheet(created) : null;
-    const output = {
-      success: normalized !== null,
-      createdTimesheet: normalized
-    };
-
-    return {
-      content: [{ type: 'text', text: JSON.stringify(output, null, 2) }],
-      structuredContent: output
-    };
-  });
+      return {
+        content: [{ type: 'text', text: JSON.stringify(output, null, 2) }],
+        structuredContent: output
+      };
+    });
 }
 
 function createConfiguredServer(): McpServer {
@@ -308,10 +308,15 @@ if (transportMode === 'stdio') {
     const transport = new SSEServerTransport(postPath, res);
 
     transport.onclose = () => {
+      // Remove from sessions map first to prevent circular reference
       sessions.delete(transport.sessionId);
-      sessionServer.close().catch(() => {
-        // Ignore shutdown errors.
-      });
+
+      // Use a timeout to break the call stack and prevent recursion
+      setTimeout(() => {
+        sessionServer.close().catch(() => {
+          // Ignore shutdown errors.
+        });
+      }, 0);
     };
 
     transport.onerror = error => {
@@ -334,7 +339,7 @@ if (transportMode === 'stdio') {
     app.get('/mcp', handleSSEConnection);
   }
 
-  app.post(postPath, async (req, res) => {
+  app.post(postPath, async (req: express.Request, res: express.Response) => {
     const sessionIdParam = req.query.sessionId;
 
     if (!sessionIdParam || typeof sessionIdParam !== 'string') {
@@ -350,7 +355,17 @@ if (transportMode === 'stdio') {
     }
 
     try {
-      await session.transport.handlePostMessage(req, res, req.body);
+      // Wrap in a timeout to prevent stack overflow
+      await new Promise<void>((resolve, reject) => {
+        setTimeout(async () => {
+          try {
+            await session.transport.handlePostMessage(req, res, req.body);
+            resolve();
+          } catch (err) {
+            reject(err);
+          }
+        }, 0);
+      });
     } catch (error) {
       console.error('Failed to handle SSE POST message:', error);
       if (!res.headersSent) {
@@ -364,11 +379,27 @@ if (transportMode === 'stdio') {
   });
 
   const shutdown = async () => {
-    for (const { transport, server } of sessions.values()) {
-      await transport.close().catch(() => undefined);
-      await server.close().catch(() => undefined);
-    }
+    // Create a copy of the sessions to avoid modification during iteration
+    const sessionsCopy = Array.from(sessions.values());
+    // Clear the sessions map first to prevent circular references
     sessions.clear();
+
+    // Close each transport and server sequentially
+    for (const { transport, server } of sessionsCopy) {
+      try {
+        await transport.close();
+      } catch (error) {
+        console.error('Error closing transport:', error);
+      }
+
+      try {
+        // Add a small delay to break the call stack
+        await new Promise(resolve => setTimeout(resolve, 10));
+        await server.close();
+      } catch (error) {
+        console.error('Error closing server:', error);
+      }
+    }
 
     await new Promise(resolve => serverInstance.close(resolve));
     process.exit(0);

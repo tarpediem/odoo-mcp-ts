@@ -4,7 +4,7 @@ WORKDIR /app
 
 # Install production dependencies
 COPY package.json package-lock.json ./
-RUN npm ci --omit=dev
+RUN npm ci
 
 # Copy sources and build
 COPY tsconfig.json ./
