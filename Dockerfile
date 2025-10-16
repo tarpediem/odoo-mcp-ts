@@ -1,26 +1,26 @@
-FROM node:20-alpine AS builder
+FROM node:20-alpine
 
 WORKDIR /app
 
-# Install production dependencies
-COPY package.json package-lock.json ./
-RUN npm ci --omit=dev
-
-# Copy sources and build
+# Copy package files
+COPY package*.json ./
 COPY tsconfig.json ./
+
+# Install dependencies
+RUN npm install
+
+# Copy source code
 COPY src ./src
-COPY scripts ./scripts
+
+# Build TypeScript
 RUN npm run build
 
-FROM node:20-alpine AS runtime
+# Expose port
+EXPOSE 3333
 
-WORKDIR /app
-ENV NODE_ENV=production
+# Set environment variable for port
+ENV PORT=3333
 
-# Copy built artifacts and dependencies
-COPY --from=builder /app/node_modules ./node_modules
-COPY --from=builder /app/dist ./dist
-COPY package.json package-lock.json ./
+# Start the server
+CMD ["npm", "start"]
 
-# Default entrypoint uses stdio for MCP hosts (docker run -i ...)
-ENTRYPOINT ["node", "dist/index.js"]

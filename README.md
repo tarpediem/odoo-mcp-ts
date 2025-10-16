@@ -1,152 +1,157 @@
-## Odoo Timesheet MCP Server
+# MCP SSE Server
 
-This project implements a [Model Context Protocol](https://modelcontextprotocol.io/docs/develop/build-server) (MCP) server that provides tools for working with Odoo 16 timesheets via the [official external XML-RPC API](https://www.odoo.com/documentation/16.0/developer/reference/external_api.html).
+A simple SSE (Server-Sent Events) server implementing the Model Context Protocol (MCP) with two basic tools.
 
-The server exposes MCP tools for:
+## Features
 
-- Listing recent timesheet entries (`account.analytic.line`)
-- Updating an existing timesheet
-- Creating a new timesheet entry
+- **Hello World Tool**: Returns a greeting message
+- **Calculator Tool**: Performs basic arithmetic operations (add, subtract, multiply, divide)
+- **SSE Transport**: Compatible with n8n and other SSE clients
+- **Express.js**: Lightweight HTTP server
 
-All responses include structured JSON output and a text representation, so MCP clients can easily consume the data or display it to users.
-
-### Prerequisites
-
-- Node.js 18+ (tested with v24)
-- An accessible Odoo 16 instance with XML-RPC enabled
-- Credentials with permission to read/create/write `account.analytic.line` records
-
-### Getting Started
+## Installation
 
 ```bash
 npm install
 ```
 
-Create a `.env` file (or export the variables) with your Odoo connection details:
+## Build
 
-```env
-ODOO_BASE_URL=https://your-odoo-host.example.com
-ODOO_DATABASE=your_database
-ODOO_USERNAME=api.user@example.com
-ODOO_PASSWORD=your_api_password
+```bash
+npm run build
 ```
 
-Available environment variables:
+## Run
 
-| Variable           | Description                                                                 |
-|--------------------|-----------------------------------------------------------------------------|
-| `ODOO_BASE_URL`    | Base URL to the Odoo instance (include protocol, e.g. `https://odoo.local`) |
-| `ODOO_DATABASE`    | Odoo database name                                                          |
-| `ODOO_USERNAME`    | Username/login used for authentication                                      |
-| `ODOO_PASSWORD`    | Password for the user (optional if using API key)                           |
-| `ODOO_API_KEY`     | API key/token for the user (takes precedence over `ODOO_PASSWORD`)          |
+```bash
+npm start
+```
 
-> Tip: Odoo treats API keys as passwords for RPC calls, so set either `ODOO_PASSWORD` or `ODOO_API_KEY` with your key—no code changes required.
-
-### Development
-
-Run the server in watch/dev mode with `tsx`:
+For development (build + run):
 
 ```bash
 npm run dev
 ```
 
-For production builds:
+## Endpoints
 
-```bash
-npm run build
-npm start
+- `GET /` - Server information and available endpoints
+- `GET /sse` - SSE endpoint for MCP connection
+- `POST /message` - Message endpoint for MCP communication
+- `GET /health` - Health check endpoint
+
+## Tools
+
+### 1. hello_world
+
+Returns a hello world message with optional custom name.
+
+**Input:**
+
+- `name` (string, optional): Name to greet (defaults to "World")
+
+**Example:**
+
+```json
+{
+  "name": "hello_world",
+  "arguments": {
+    "name": "Alice"
+  }
+}
 ```
 
-The server communicates over stdio, so you can plug it into any MCP-compatible host. When the server starts it registers three tools:
+### 2. calculator
 
-| Tool name          | Purpose                                   |
-|--------------------|-------------------------------------------|
-| `list_timesheets`  | Filter timesheets by employee/project/etc |
-| `update_timesheet` | Patch an existing timesheet               |
-| `create_timesheet` | Create a new timesheet entry              |
+Performs basic arithmetic operations.
 
-### Transport Modes (stdio vs. SSE)
+**Input:**
 
-By default the server runs over stdio, which works well for most CLI-based MCP hosts. Some platforms (such as n8n) expect the legacy HTTP + Server-Sent Events (SSE) transport. You can enable that mode via environment variables:
+- `operation` (string, required): One of "add", "subtract", "multiply", "divide"
+- `a` (number, required): First number
+- `b` (number, required): Second number
 
-```bash
-MCP_TRANSPORT=sse npm start
+**Example:**
+
+```json
+{
+  "name": "calculator",
+  "arguments": {
+    "operation": "add",
+    "a": 5,
+    "b": 3
+  }
+}
 ```
 
-SSE mode starts an HTTP server with the following settings (override via env vars):
+## Usage with n8n
 
-| Variable             | Default         | Description                                                            |
-|----------------------|-----------------|------------------------------------------------------------------------|
-| `MCP_TRANSPORT`      | `stdio`         | Set to `sse` to enable HTTP + SSE transport.                           |
-| `MCP_HTTP_PORT`      | `3333`          | Port for the HTTP server.                                             |
-| `MCP_SSE_PATH`       | `/sse`          | GET path where clients establish the SSE stream (alias: `/mcp`).       |
-| `MCP_SSE_POST_PATH`  | `/messages`     | Relative path clients use for POSTing MCP payloads.                    |
+1. Start the server: `npm start`
+2. In n8n, use the SSE endpoint: `http://localhost:3000/sse`
+3. Configure the message endpoint: `http://localhost:3000/message`
 
-When running in SSE mode:
+## Configuration
 
-- Clients open a GET stream on `/sse` (e.g. `GET http://host:3333/sse`). For backwards compatibility, `/mcp` is also accepted.
-- The server emits an `endpoint` event that includes the POST URL + `sessionId`.
-- Clients send JSON-RPC requests to the POST endpoint returned in the event (default `/messages?sessionId=...`).
-
-Multiple sessions are supported; each incoming GET connection gets its own MCP server instance.
-
-### Running in Docker
-
-If you need to deploy the MCP server on multiple machines (for example your home workstation or an n8n host), you can use the provided Docker resources.
-
-1. Ensure your `.env` (or chosen env file) contains the Odoo credentials/URL as described above.
-2. Build and run the container via the helper script:
-
-   ```bash
-   ./scripts/docker-run.sh
-   ```
-
-   The script will:
-   - Build the `odoo-mcp-server` image (override with `IMAGE_NAME=my-image ./scripts/docker-run.sh`)
-   - Start the container with stdin/stdout attached so MCP hosts can communicate over stdio
-   - Load environment variables from `.env` (override with `ENV_FILE=/path/to/env`)
-
-To manage the container manually:
+Set the `PORT` environment variable to change the default port (3000):
 
 ```bash
-docker build -t odoo-mcp-server .
-docker run --rm -i --env-file .env odoo-mcp-server
+PORT=8080 npm start
 ```
 
-Because MCP relies on stdio, keep the `-i` flag so the container stays attached to the calling process. When integrating with platforms like n8n, configure the process step to start `docker run --rm -i ...` and pipe stdio as required by your workflow.
+## Docker
 
-> **SSE note:** If you want the container to serve HTTP + SSE instead of stdio, add the transport variables:  
-> `docker run --rm -i -p 3333:3333 --env-file .env -e MCP_TRANSPORT=sse odoo-mcp-server`
+### Build and Run with Docker
 
-In addition to tools, the server exposes helpful MCP resources:
+```bash
+docker build -t mcp-sse-server .
+docker run -d -p 3333:3333 -e PORT=3333 --name mcp-sse-server mcp-sse-server
+```
 
-- `resource://odoo-mcp/docs/readme` – this README for quick reference inside a client.
-- `resource://odoo-mcp/config/environment` – environment variable checklist (values hidden for secrets).
-- `resource://odoo-mcp/docs/timesheet-fields` – summary of `account.analytic.line` fields used by the tools.
+Or use the helper script:
 
-Each tool validates input using [`zod`](https://github.com/colinhacks/zod) and interacts with Odoo through the XML-RPC endpoints (`/xmlrpc/2/common` for authentication and `/xmlrpc/2/object` for RPC calls).
+```bash
+chmod +x scripts/docker-run.sh
+./scripts/docker-run.sh
+```
 
-### Odoo Model Notes
+### Using Docker Compose
 
-Timesheets are stored in `account.analytic.line`. The server reads and writes the following fields:
+```bash
+docker-compose up -d
+```
 
-- `name` (description)
-- `date`
-- `unit_amount` (hours)
-- `employee_id`
-- `project_id`
-- `task_id`
+To stop:
 
-If you need to customise the behaviour (additional fields, different defaults, etc.), extend the helper functions in `src/odooClient.ts`.
+```bash
+docker-compose down
+```
 
-### MCP Integration Tips
+To view logs:
 
-- Ensure your MCP host starts this server as a stdio subprocess.
-- All tool responses include both `structuredContent` (JSON) and a human-readable text payload.
-- Authentication failures or RPC errors are surfaced as tool errors with contextual messages prefixed by the tool name.
+```bash
+docker-compose logs -f
+```
 
-### Useful Links
+### Docker Management
 
-- [Odoo 16 External API reference](https://www.odoo.com/documentation/16.0/developer/reference/external_api.html)
-- [Model Context Protocol - Build a server](https://modelcontextprotocol.io/docs/develop/build-server)
+View logs:
+
+```bash
+docker logs -f mcp-sse-server
+```
+
+Stop container:
+
+```bash
+docker stop mcp-sse-server
+```
+
+Remove container:
+
+```bash
+docker rm mcp-sse-server
+```
+
+## License
+
+MIT
