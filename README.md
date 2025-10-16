@@ -66,6 +66,30 @@ The server communicates over stdio, so you can plug it into any MCP-compatible h
 | `update_timesheet` | Patch an existing timesheet               |
 | `create_timesheet` | Create a new timesheet entry              |
 
+### Transport Modes (stdio vs. SSE)
+
+By default the server runs over stdio, which works well for most CLI-based MCP hosts. Some platforms (such as n8n) expect the legacy HTTP + Server-Sent Events (SSE) transport. You can enable that mode via environment variables:
+
+```bash
+MCP_TRANSPORT=sse npm start
+```
+
+SSE mode starts an HTTP server with the following settings (override via env vars):
+
+| Variable             | Default         | Description                                                            |
+|----------------------|-----------------|------------------------------------------------------------------------|
+| `MCP_TRANSPORT`      | `stdio`         | Set to `sse` to enable HTTP + SSE transport.                           |
+| `MCP_HTTP_PORT`      | `3333`          | Port for the HTTP server.                                             |
+| `MCP_SSE_POST_PATH`  | `/mcp/messages` | Relative path clients use for POSTing MCP payloads.                    |
+
+When running in SSE mode:
+
+- Clients open a GET stream on `/mcp` (e.g. `GET http://host:3333/mcp`).
+- The server emits an `endpoint` event that includes the POST URL + `sessionId`.
+- Clients send JSON-RPC requests to the POST endpoint returned in the event (default `/mcp/messages?sessionId=...`).
+
+Multiple sessions are supported; each incoming GET connection gets its own MCP server instance.
+
 ### Running in Docker
 
 If you need to deploy the MCP server on multiple machines (for example your home workstation or an n8n host), you can use the provided Docker resources.
@@ -90,6 +114,9 @@ docker run --rm -i --env-file .env odoo-mcp-server
 ```
 
 Because MCP relies on stdio, keep the `-i` flag so the container stays attached to the calling process. When integrating with platforms like n8n, configure the process step to start `docker run --rm -i ...` and pipe stdio as required by your workflow.
+
+> **SSE note:** If you want the container to serve HTTP + SSE instead of stdio, add the transport variables:  
+> `docker run --rm -i -p 3333:3333 --env-file .env -e MCP_TRANSPORT=sse odoo-mcp-server`
 
 In addition to tools, the server exposes helpful MCP resources:
 

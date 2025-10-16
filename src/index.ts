@@ -1,14 +1,11 @@
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
+import { SSEServerTransport } from '@modelcontextprotocol/sdk/server/sse.js';
 import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js';
+import express from 'express';
 import { z } from 'zod';
 import { loadOdooConfig } from './config.js';
 import { OdooClient, TimesheetRecord } from './odooClient.js';
 import { registerResources } from './resources.js';
-
-const server = new McpServer({
-  name: 'odoo-mcp-server',
-  version: '0.1.0'
-});
 
 type Many2OneValue = [number, string] | false | null | undefined;
 
@@ -103,9 +100,10 @@ const isoDateSchema = z
   .regex(/^\d{4}-\d{2}-\d{2}$/, 'Date must be formatted as YYYY-MM-DD')
   .describe('Calendar date in YYYY-MM-DD format');
 
-registerResources(server);
+function registerTimesheetTools(server: McpServer): void {
+  registerResources(server);
 
-server.registerTool(
+  server.registerTool(
   'list_timesheets',
   {
     title: 'List Timesheets',
@@ -154,10 +152,10 @@ server.registerTool(
       content: [{ type: 'text', text: JSON.stringify(output, null, 2) }],
       structuredContent: output
     };
-  }
-);
+    }
+  );
 
-server.registerTool(
+  server.registerTool(
   'update_timesheet',
   {
     title: 'Update Timesheet Entry',
@@ -210,10 +208,10 @@ server.registerTool(
       content: [{ type: 'text', text: JSON.stringify(output, null, 2) }],
       structuredContent: output
     };
-  }
-);
+    }
+  );
 
-server.registerTool(
+  server.registerTool(
   'create_timesheet',
   {
     title: 'Create Timesheet Entry',
@@ -254,27 +252,124 @@ server.registerTool(
       content: [{ type: 'text', text: JSON.stringify(output, null, 2) }],
       structuredContent: output
     };
-  }
-);
+  });
+}
 
-const transport = new StdioServerTransport();
-
-server
-  .connect(transport)
-  .then(() => {
-    // No-op: the transport runs until the process exits.
-  })
-  .catch(error => {
-    console.error('Failed to start MCP server:', error);
-    process.exit(1);
+function createConfiguredServer(): McpServer {
+  const server = new McpServer({
+    name: 'odoo-mcp-server',
+    version: '0.1.0'
   });
 
-process.on('SIGINT', async () => {
-  await server.close();
-  process.exit(0);
-});
+  registerTimesheetTools(server);
+  return server;
+}
 
-process.on('SIGTERM', async () => {
-  await server.close();
-  process.exit(0);
-});
+const transportMode = (process.env.MCP_TRANSPORT ?? 'stdio').toLowerCase();
+
+if (transportMode === 'stdio') {
+  const server = createConfiguredServer();
+  const transport = new StdioServerTransport();
+
+  server
+    .connect(transport)
+    .then(() => {
+      // No-op: the transport runs until the process exits.
+    })
+    .catch(error => {
+      console.error('Failed to start MCP server:', error);
+      process.exit(1);
+    });
+
+  const shutdown = async () => {
+    await server.close();
+    process.exit(0);
+  };
+
+  process.on('SIGINT', shutdown);
+  process.on('SIGTERM', shutdown);
+} else if (transportMode === 'sse') {
+  const app = express();
+  const port = Number.parseInt(process.env.MCP_HTTP_PORT ?? '3333', 10);
+  const postPath = process.env.MCP_SSE_POST_PATH ?? '/mcp/messages';
+
+  app.use(express.json({ limit: '4mb' }));
+
+  interface SessionContext {
+    server: McpServer;
+    transport: SSEServerTransport;
+  }
+
+  const sessions = new Map<string, SessionContext>();
+
+  app.get('/mcp', async (_req, res) => {
+    const sessionServer = createConfiguredServer();
+    const transport = new SSEServerTransport(postPath, res);
+
+    transport.onclose = () => {
+      sessions.delete(transport.sessionId);
+      sessionServer.close().catch(() => {
+        // Ignore shutdown errors.
+      });
+    };
+
+    transport.onerror = error => {
+      console.error('SSE transport error:', error);
+    };
+
+    try {
+      await sessionServer.connect(transport);
+      sessions.set(transport.sessionId, { server: sessionServer, transport });
+    } catch (error) {
+      sessions.delete(transport.sessionId);
+      res.end();
+      console.error('Failed to establish SSE session:', error);
+    }
+  });
+
+  app.post(postPath, async (req, res) => {
+    const sessionIdParam = req.query.sessionId;
+
+    if (!sessionIdParam || typeof sessionIdParam !== 'string') {
+      res.status(400).send('Missing sessionId query parameter.');
+      return;
+    }
+
+    const session = sessions.get(sessionIdParam);
+
+    if (!session) {
+      res.status(404).send('Unknown session.');
+      return;
+    }
+
+    try {
+      await session.transport.handlePostMessage(req, res, req.body);
+    } catch (error) {
+      console.error('Failed to handle SSE POST message:', error);
+      if (!res.headersSent) {
+        res.status(500).send('Internal server error.');
+      }
+    }
+  });
+
+  const serverInstance = app.listen(port, () => {
+    console.log(`Odoo MCP server (SSE mode) listening on port ${port}`);
+  });
+
+  const shutdown = async () => {
+    for (const { transport, server } of sessions.values()) {
+      await transport.close().catch(() => undefined);
+      await server.close().catch(() => undefined);
+    }
+    sessions.clear();
+
+    await new Promise(resolve => serverInstance.close(resolve));
+    process.exit(0);
+  };
+
+  process.on('SIGINT', shutdown);
+  process.on('SIGTERM', shutdown);
+} else {
+  console.error(`Unsupported MCP transport: ${transportMode}. Use "stdio" or "sse".`);
+  process.exit(1);
+}
