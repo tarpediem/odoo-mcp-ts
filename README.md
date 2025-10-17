@@ -91,6 +91,23 @@ When running in SSE mode:
 
 Multiple sessions are supported; each incoming GET connection gets its own MCP server instance.
 
+#### Quick SSE test with curl
+
+Spin up the container (or local process) with `MCP_TRANSPORT=sse` and then:
+
+```bash
+# 1. Start an SSE stream and capture the endpoint event
+curl -N http://127.0.0.1:3333/sse
+
+# 2. In another terminal, post an initialize request to the returned session endpoint
+curl -X POST \
+  -H "Content-Type: application/json" \
+  -d '{"jsonrpc":"2.0","id":"1","method":"initialize","params":{"clientInfo":{"name":"curl-test","version":"0.0.1"},"capabilities":{},"protocolVersion":"0.5"}}' \
+  "http://127.0.0.1:3333/messages?sessionId=<session-from-step-1>"
+```
+
+You should receive an `Accepted` response and the SSE stream will emit the `initialize` result payload that includes server metadata and capabilities.
+
 ### Running in Docker
 
 If you need to deploy the MCP server on multiple machines (for example your home workstation or an n8n host), you can use the provided Docker resources.

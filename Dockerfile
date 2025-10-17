@@ -2,15 +2,18 @@ FROM node:20-alpine AS builder
 
 WORKDIR /app
 
-# Install production dependencies
+# Install dependencies (including dev for build)
 COPY package.json package-lock.json ./
-RUN npm ci --omit=dev
+RUN npm ci
 
 # Copy sources and build
 COPY tsconfig.json ./
 COPY src ./src
 COPY scripts ./scripts
 RUN npm run build
+
+# Trim dev dependencies before packaging runtime image
+RUN npm prune --omit=dev
 
 FROM node:20-alpine AS runtime
 
